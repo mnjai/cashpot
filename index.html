@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Strategic Lottery Generator</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 800px; 
+            margin: 20px auto; 
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 0;
+        }
+        .primary-btn {
+            background: #4CAF50;
+            color: white;
+        }
+        .danger-btn {
+            background: #dc3545;
+            color: white;
+        }
+        .info-btn {
+            background: #17a2b8;
+            color: white;
+        }
+        .history-count {
+            background: #e3f2fd;
+            padding: 8px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .number-input {
+            width: 50px;
+            margin: 0 5px;
+            padding: 5px;
+        }
+        .error {
+            color: red;
+            margin: 10px 0;
+        }
+        .set-input {
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .result {
+            margin: 15px 0;
+            padding: 10px;
+            background: #e8f5e9;
+            border-radius: 5px;
+        }
+        .history-panel {
+            margin: 20px 0;
+            padding: 15px;
+            background: #fff3cd;
+            border-radius: 5px;
+        }
+        .history-set {
+            margin: 5px 0;
+            padding: 8px;
+            background: white;
+            border-radius: 4px;
+        }
+        .strategy-tag {
+            font-size: 0.8em;
+            color: #666;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Cashpot Numbers Generator</h2>
+        
+        <div class="history-count">
+            Historical Sets Stored: <span id="storedCount">0</span>
+            <div style="margin-top: 10px;">
+                <button class="info-btn" onclick="toggleHistory()">Show/Hide History</button>
+                <button class="danger-btn" onclick="resetHistory()">Reset History</button>
+            </div>
+        </div>
+
+        <div id="historyPanel" class="history-panel" style="display: none;"></div>
+        
+        <div id="inputContainer"></div>
+        
+        <button class="primary-btn" onclick="addSetInput()">Add New Set</button>
+        <button class="primary-btn" onclick="generateSets()">Generate 5 New Sets</button>
+        
+        <div id="errorMessage" class="error"></div>
+        <div id="results"></div>
+    </div>
+
+    <script>
+        let userSets = JSON.parse(localStorage.getItem('userSets') || '[]');
+        let setCounter = 0;
+
+        // Initialize stored count
+        document.getElementById('storedCount').textContent = userSets.length;
+
+        function addSetInput() {
+            const container = document.getElementById('inputContainer');
+            setCounter++;
+            
+            const setDiv = document.createElement('div');
+            setDiv.className = 'set-input';
+            setDiv.innerHTML = `
+                <strong>New Set ${setCounter}:</strong>
+                ${Array.from({length: 5}, (_, i) => 
+                    `<input type="number" min="1" max="20" 
+                     class="number-input" placeholder="#${i+1}" required>`
+                ).join('')}
+                <button class="danger-btn" onclick="removeSet(this)">Remove</button>
+            `;
+            
+            container.appendChild(setDiv);
+        }
+
+        function removeSet(button) {
+            button.parentElement.remove();
+            updateSetNumbers();
+        }
+
+        function updateSetNumbers() {
+            const sets = document.querySelectorAll('.set-input');
+            setCounter = 0;
+            sets.forEach((set, index) => {
+                setCounter = index + 1;
+                set.querySelector('strong').textContent = `New Set ${setCounter}:`;
+            });
+        }
+
+        function validateInputs() {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = '';
+            const inputs = document.querySelectorAll('.number-input');
+            
+            // Check empty and valid numbers
+            for(const input of inputs) {
+                const value = parseInt(input.value);
+                if(!input.value || isNaN(value) || value < 1 || value > 20) {
+                    errorDiv.textContent = 'All numbers must be between 1-20';
+                    return false;
+                }
+            }
+
+            // Check duplicates within sets
+            const sets = document.querySelectorAll('.set-input');
+            for(const set of sets) {
+                const numbers = Array.from(set.querySelectorAll('input'))
+                                  .map(i => parseInt(i.value));
+                if(new Set(numbers).size !== 5) {
+                    errorDiv.textContent = 'No duplicates allowed within a set';
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        function generateSets() {
+            if(!validateInputs()) return;
+
+            // Capture current inputs
+            const newSets = [];
+            document.querySelectorAll('.set-input').forEach(set => {
+                const numbers = Array.from(set.querySelectorAll('input'))
+                                  .map(i => parseInt(i.value))
+                                  .sort((a, b) => a - b);
+                newSets.push(numbers);
+            });
+
+            // Store unique new sets
+            newSets.forEach(set => {
+                if(!userSets.some(existing => 
+                    JSON.stringify(existing) === JSON.stringify(set))) {
+                    userSets.push(set);
+                }
+            });
+
+            // Update storage and UI
+            localStorage.setItem('userSets', JSON.stringify(userSets));
+            document.getElementById('storedCount').textContent = userSets.length;
+
+            // Enhanced generation logic
+            const analysis = analyzeNumbers();
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<h3>Strategic Generated Sets:</h3>';
+            
+            const generated = new Set();
+            let strategyIndex = 0;
+
+            while(generated.size < 5) {
+                const strategy = analysis.strategies[strategyIndex % analysis.strategies.length];
+                let candidate = strategy.fn();
+                
+                candidate = [...new Set(candidate)] // Remove duplicates
+                    .slice(0, 5)
+                    .sort((a, b) => a - b);
+
+                const candidateString = JSON.stringify(candidate);
+                
+                if(candidate.length === 5 && 
+                   !userSets.some(set => JSON.stringify(set) === candidateString) &&
+                   !generated.has(candidateString)) {
+                   
+                    const div = document.createElement('div');
+                    div.className = 'result';
+                    div.innerHTML = `${candidate.join(', ')}
+                        <div class="strategy-tag">Strategy: ${strategy.name}</div>`;
+                    resultsDiv.appendChild(div);
+                    
+                    generated.add(candidateString);
+                    strategyIndex++;
+                }
+            }
+        }
+
+        function analyzeNumbers() {
+            const frequency = {};
+            const coOccurrence = {};
+            const allNumbers = Array.from({length: 20}, (_, i) => i + 1);
+            
+            // Calculate frequencies and co-occurrences
+            userSets.forEach(set => {
+                set.forEach((num, index) => {
+                    frequency[num] = (frequency[num] || 0) + 1;
+                    
+                    set.forEach(otherNum => {
+                        if(num !== otherNum) {
+                            coOccurrence[num] = coOccurrence[num] || {};
+                            coOccurrence[num][otherNum] = (coOccurrence[num][otherNum] || 0) + 1;
+                        }
+                    });
+                });
+            });
+
+            // Categorize numbers
+            const frequencyList = Object.entries(frequency).sort((a, b) => b[1] - a[1]);
+            const hot = frequencyList.slice(0, 6).map(n => parseInt(n[0]));
+            const warm = frequencyList.slice(6, 12).map(n => parseInt(n[0]));
+            const cold = [
+                ...frequencyList.slice(12).map(n => parseInt(n[0])),
+                ...allNumbers.filter(n => !frequency[n])
+            ];
+
+            // Define generation strategies
+            const strategies = [
+                {
+                    name: "Hot + Frequent Partners",
+                    fn: () => [
+                        ...randomSelect(hot, 1),
+                        ...getTopPartners(hot[0], coOccurrence, 2),
+                        ...randomSelect(warm, 1),
+                        ...randomSelect(cold, 1)
+                    ]
+                },
+                {
+                    name: "Balanced Hot/Warm/Cold",
+                    fn: () => [
+                        ...randomSelect(hot, 2),
+                        ...randomSelect(warm, 2),
+                        ...randomSelect(cold, 1)
+                    ]
+                },
+                {
+                    name: "Warm/Cold Balance",
+                    fn: () => [
+                        ...randomSelect(warm, 3),
+                        ...randomSelect(cold, 2)
+                    ]
+                },
+                {
+                    name: "Hot/Cold Mix",
+                    fn: () => [
+                        ...randomSelect(hot, 3),
+                        ...randomSelect(cold, 2)
+                    ]
+                },
+                {
+                    name: "Revive Cold Numbers",
+                    fn: () => [
+                        ...randomSelect(hot, 1),
+                        ...randomSelect(warm, 1),
+                        ...randomSelect(cold, 3)
+                    ]
+                }
+            ];
+
+            return { hot, warm, cold, strategies };
+        }
+
+        function randomSelect(pool, count) {
+            const shuffled = [...pool].sort(() => Math.random() - 0.5);
+            return shuffled.slice(0, count);
+        }
+
+        function getTopPartners(number, coOccurrence, count) {
+            const partners = Object.entries(coOccurrence[number] || {})
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, count)
+                .map(n => parseInt(n[0]));
+            return partners.length > 0 ? partners : randomSelect([...this.hot, ...this.warm], count);
+        }
+
+        function resetHistory() {
+            if(confirm("Are you sure you want to reset all historical data?")) {
+                localStorage.removeItem('userSets');
+                userSets = [];
+                document.getElementById('storedCount').textContent = '0';
+                document.getElementById('historyPanel').innerHTML = '';
+                document.getElementById('historyPanel').style.display = 'none';
+            }
+        }
+
+        function toggleHistory() {
+            const panel = document.getElementById('historyPanel');
+            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+            
+            if(panel.style.display === 'block') {
+                panel.innerHTML = userSets.length > 0 
+                    ? userSets.map((set, index) => `
+                        <div class="history-set">
+                            Set ${index + 1}: ${set.join(', ')}
+                        </div>
+                      `).join('')
+                    : '<div>No historical sets stored</div>';
+            }
+        }
+
+        // Add initial input set on load
+        addSetInput();
+    </script>
+</body>
+</html>
